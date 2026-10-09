@@ -1,0 +1,15 @@
+# Adaptive drawing content review
+
+The expanded pool has 42 concepts: the 12 previously reviewed starter concepts and 30 new concepts in `worker/content/bank-drawing.ts`. The new concepts have ten entries at each difficulty. The older single-object concepts are easy. This is a editorial classification, not a calibrated psychometric measurement; the group's observed success determines the next selection.
+
+| Level  | New concepts (German / English)                                                                                                                                                                                                                                                                       |
+| ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Easy   | Apfel / apple; Schneemann / snowman; Brille / eyeglasses; Schere / scissors; Kerze / candle; Gitarre / guitar; Schmetterling / butterfly; Krone / crown; Tasse / cup; Anker / anchor                                                                                                                  |
+| Medium | Leuchtturm / lighthouse; Heißluftballon / hot air balloon; Wasserfall / waterfall; Skateboard / skateboard; Kaktus / cactus; Windmühle / windmill; Teleskop / telescope; Hängematte / hammock; Pinguin / penguin; Schatztruhe / treasure chest                                                        |
+| Hard   | Fallschirmspringer / skydiver; Achterbahn / roller coaster; Zugbrücke / drawbridge; Flaschenpost / message in a bottle; Chamäleon / chameleon; Sonnenfinsternis / solar eclipse; Schiffsschleuse / canal lock; Tiefseetaucher / deep-sea diver; Dampfmaschine / steam engine; Marionette / marionette |
+
+Easy concepts have a familiar silhouette. Medium concepts need more characteristic parts. Hard concepts need a scene, interaction, mechanism or distinctive context. All are concrete concepts that can be represented without spelling, labels or numbers. They remain possible within the unchanged 45-second timer.
+
+Both translations denote the same concept. Reviewed full-concept synonyms include spectacles/eyeglasses, Fernrohr, Schatzkiste, parachutist, Fadenpuppe/string puppet and accepted spacing/hyphen variants for compound English nouns. German umlaut transliterations and appropriate gender variants are included. Broad component words such as bottle, bridge, diver, puppet or eclipse do not count by themselves. Brille includes no Sonnenbrille/sunglasses alias. Schleuse uses canal/navigation/water lock rather than the ambiguous word lock.
+
+Matching keeps the existing Unicode normalization, whitespace collapse and case folding. Both languages count for every participant. Canonical answer and question IDs are opaque; only the current artist receives the word before reveal. A structural test checks that accepted aliases do not identify two different concepts.

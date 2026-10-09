@@ -10,7 +10,7 @@ Colleagues take a short shared break during a weekly team meeting. They use lapt
 
 ## Product Purpose
 
-Brainbreak is a browser multiplayer game with room invitations, a shared category vote, six synchronized rounds, clear reveals and persistent weekly points. Players should reach a real game quickly, understand their current role and receive reliable feedback. Timers, guesses, scoring and progress are owned by the server.
+Brainbreak is a browser multiplayer game with room invitations, six different games in a random mix, short tutorials, synchronized rounds, clear reveals and persistent weekly points. Players should reach a real game quickly, understand their current role and receive reliable feedback. Timers, guesses, scoring and progress are owned by the server.
 
 ## Brand Personality
 
@@ -25,6 +25,7 @@ The previous interface's oversized promotional headings, repeated slogans, multi
 - Put creating, joining and playing ahead of promotional content.
 - Preserve the brain illustration; let surrounding elements be quiet.
 - Show one clear next action and the information needed to take it.
+- Explain each game with a short example before starting its timer. Ready clicks belong to the shared room state.
 - Give every player a consistent deadline, role and answer status.
 - Explain team roles, public drawing chat and mixed rounds in ordinary language.
 - Keep feedback sounds short, gentle and optional.

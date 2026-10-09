@@ -10,6 +10,7 @@ import { knowledgeBank } from "./bank-knowledge";
 import { challengeBank } from "./bank-challenges";
 import { associationBank } from "./bank-association";
 import { drawingBank } from "./bank-drawing";
+import { puzzleBank } from "./bank-puzzles";
 
 // Every user-facing string is written twice (de/en) with the same meaning.
 // Question and option IDs are language-neutral and stable, so switching language never changes identity.
@@ -33,6 +34,13 @@ const starter01: WeekPackage = {
   week: "2026-W41",
   title: t("Startpaket Woche 41", "Starter Pack Week 41"),
   questions: {
+    code: [],
+    sets: [],
+    connections: [],
+    wavelength: [],
+    memory: [],
+    wordle: [],
+    countries: [],
     association: [],
     geography: [],
     ...extraGames["starter-01"],
@@ -392,6 +400,13 @@ const starter02: WeekPackage = {
   week: "2026-W42",
   title: t("Startpaket Woche 42", "Starter Pack Week 42"),
   questions: {
+    code: [],
+    sets: [],
+    connections: [],
+    wavelength: [],
+    memory: [],
+    wordle: [],
+    countries: [],
     association: [],
     geography: [],
     ...extraGames["starter-02"],
@@ -744,6 +759,7 @@ const legacyTruthMap = Object.fromEntries(
   ),
 );
 const additions = {
+  ...puzzleBank,
   ...knowledgeBank,
   ...challengeBank,
   drawing: drawingBank,

@@ -1,5 +1,5 @@
-# Execute with: browser-harness < scripts/multiplayer-test.py
-# Maintained legacy harness script; current acceptance uses CUA instead.
+# Historical voting-interface browser test. It does not support the current guided mix.
+# Current browser acceptance uses CUA; transport acceptance uses guided-test.mjs.
 # Uses three isolated contexts in an existing Chrome instance. No fake timers.
 # Static maintenance does not count as an executed browser acceptance test.
 import json

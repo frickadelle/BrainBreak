@@ -41,6 +41,16 @@ export function soundCue(
     current.me.answer !== undefined
   )
     return "answer";
+  if (
+    current.phase === "question" &&
+    current.question?.id === previous.question?.id &&
+    current.puzzle &&
+    previous.puzzle &&
+    (current.puzzle.progress.attempts > previous.puzzle.progress.attempts ||
+      (current.puzzle.progress.foundGroups?.length ?? 0) >
+        (previous.puzzle.progress.foundGroups?.length ?? 0))
+  )
+    return "answer";
   return null;
 }
 export function useSounds(state: RoomView | null, online = true) {

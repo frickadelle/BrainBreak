@@ -11,8 +11,8 @@
     "test": "vitest run",
     "db:local": "wrangler d1 migrations apply DB --local",
     "deploy": "npm run typecheck && npm run build && wrangler deploy",
-    "test:e2e": "browser-harness < scripts/multiplayer-test.py",
-    "test:protocol": "node scripts/protocol-test.mjs"
+    "test:protocol": "node scripts/guided-test.mjs",
+    "test:protocol:legacy": "node scripts/protocol-test.mjs"
   },
   "dependencies": {
     "@fontsource-variable/dm-sans": "^5.3.0",
@@ -23,6 +23,7 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261009.1",
+    "@types/node": "^22.20.5",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^4.4.0",

@@ -1,3 +1,4 @@
+import type { PuzzleAction, PuzzleDefinition, PuzzleView } from "./puzzles";
 export type Difficulty = "easy" | "medium" | "hard";
 export type Team = "green" | "purple";
 export type Language = "de" | "en";
@@ -10,7 +11,14 @@ export type Category =
   | "order"
   | "drawing"
   | "association"
-  | "geography";
+  | "geography"
+  | "code"
+  | "sets"
+  | "connections"
+  | "wavelength"
+  | "memory"
+  | "wordle"
+  | "countries";
 export type GameMode = Category | "mixed";
 export type Localized<T> = { de: T; en?: T };
 export const CATEGORIES: Category[] = [
@@ -23,6 +31,13 @@ export const CATEGORIES: Category[] = [
   "drawing",
   "association",
   "geography",
+  "code",
+  "sets",
+  "connections",
+  "wavelength",
+  "memory",
+  "wordle",
+  "countries",
 ];
 export function isNumericCategory(category: Category): boolean {
   return category === "estimate" || category === "arithmetic";
@@ -71,6 +86,7 @@ export interface GeoPoint {
   lng: number;
 }
 export interface Question {
+  puzzle?: PuzzleDefinition;
   geography?: {
     panoId: string;
     heading?: number;
@@ -128,7 +144,7 @@ export interface LeaderboardRow {
 }
 export interface RoomView {
   code: string;
-  phase: "lobby" | "voting" | "question" | "reveal" | "results";
+  phase: "lobby" | "voting" | "tutorial" | "question" | "reveal" | "results";
   hostId: string;
   me: {
     id: string;
@@ -146,6 +162,8 @@ export interface RoomView {
   mode?: GameMode;
   availableModes?: GameMode[];
   availableCategories: Category[];
+  tutorial?: { category: Category; readyIds: string[] };
+  puzzle?: PuzzleView;
   question?: PublicQuestion;
   geography?: { browserKey: string };
   drawing?: DrawingView;
@@ -182,7 +200,9 @@ export interface RoomView {
 export type ClientMessage =
   | { type: "auth"; token: string; language: Language }
   | { type: "language"; language: Language }
-  | { type: "start" }
+  | { type: "start"; mode?: GameMode; tutorials?: boolean }
+  | { type: "ready"; round: number }
+  | { type: "puzzleAction"; questionId: string; action: PuzzleAction }
   | { type: "vote"; category: GameMode }
   | { type: "answer"; questionId: string; value: string }
   | {

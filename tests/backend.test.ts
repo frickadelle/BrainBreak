@@ -9,6 +9,8 @@ import {
   nextDifficulty,
   successfulAnswer,
   initializeDrawing,
+  initializePuzzle,
+  selectRoundCategory,
   initializeAssociation,
   normalizedStroke,
   matchesDrawingWord,
@@ -35,6 +37,16 @@ import {
   validAssociationQuestion,
   settleAssociationClues,
 } from "../worker/association";
+import {
+  isPuzzleCategory,
+  PUZZLE_CATEGORIES,
+  type PuzzleCategory,
+} from "../shared/puzzles";
+import {
+  validPuzzleQuestion,
+  puzzleDuration,
+  puzzleResult,
+} from "../worker/puzzles";
 import { BrainbreakRoom } from "../worker/room";
 import {
   convertNumberDraft,
@@ -71,6 +83,13 @@ const pack: WeekPackage = {
     drawing: [],
     association: [],
     geography: [],
+    code: [],
+    sets: [],
+    connections: [],
+    wavelength: [],
+    memory: [],
+    wordle: [],
+    countries: [],
   },
 };
 function state(): RoomState {
@@ -337,7 +356,9 @@ describe("visibility and translation parity", () => {
           expect(new Set(q.options?.map((o) => o.id)).size).toBe(
             q.options?.length ?? 0,
           );
-          if (category === "estimate" || category === "arithmetic") {
+          if (isPuzzleCategory(category)) {
+            expect(validPuzzleQuestion(q)).toBe(true);
+          } else if (category === "estimate" || category === "arithmetic") {
             expect(typeof q.answer).toBe("number");
             expect(Number.isFinite(q.answer)).toBe(true);
             expect(q.answer as number).toBeGreaterThanOrEqual(0);
@@ -1415,6 +1436,8 @@ describe("association team rounds", () => {
     const old = structuredClone(packages[0]);
     delete (old.questions as Partial<WeekPackage["questions"]>).association;
     delete (old.questions as Partial<WeekPackage["questions"]>).geography;
+    for (const category of PUZZLE_CATEGORIES)
+      delete (old.questions as Partial<WeekPackage["questions"]>)[category];
     expect(availableCategories(old)).toEqual([
       "trivia",
       "logic",
@@ -1881,5 +1904,456 @@ describe("authoritative early voting completion", () => {
     await h.room.alarm();
     expect(currentQuestion(h.saved())!.id).toBe(q);
     expect(h.saved().endsAt).toBe(deadline);
+  });
+});
+
+function lobbyState(): RoomState {
+  const s = state();
+  s.pack = structuredClone(packages[0]);
+  s.phase = "lobby";
+  s.category = undefined;
+  s.endsAt = null;
+  return s;
+}
+function engineState(kind: PuzzleCategory): RoomState {
+  const s = state();
+  s.pack = structuredClone(packages[0]);
+  s.category = kind;
+  const start = Date.now();
+  beginRound(s, () => 0);
+  const q = currentQuestion(s)!;
+  s.endsAt = start + puzzleDuration(q);
+  initializePuzzle(s, start);
+  return s;
+}
+
+describe("guided tutorial transport", () => {
+  it("starts the guided mix directly with a secret-free tutorial and persists readiness across reload", async () => {
+    const h = harness(lobbyState());
+    await h.ready();
+    await action(h, 0, { type: "start", mode: "mixed", tutorials: true });
+    expect(h.saved().phase).toBe("tutorial");
+    expect(h.saved().guided).toBe(true);
+    expect(h.saved().mode).toBe("mixed");
+    expect(h.saved().mixedCategories).toHaveLength(1);
+    expect(h.saved().adaptive).toBeUndefined();
+    expect(h.saved().puzzle).toBeUndefined();
+    expect(h.saved().drawing).toBeUndefined();
+    expect(h.saved().association).toBeUndefined();
+    for (const socket of h.sockets) {
+      const view = JSON.parse(socket.messages.at(-1)!).state;
+      expect(view.tutorial.readyIds).toEqual([]);
+      for (const field of [
+        "question",
+        "puzzle",
+        "drawing",
+        "association",
+        "reveal",
+      ])
+        expect(view[field]).toBeUndefined();
+      expect(view.me.answer).toBeUndefined();
+      expect(JSON.stringify(view)).not.toContain("chosenQuestionIds");
+    }
+    await action(h, 0, { type: "ready", round: 0 });
+    await action(h, 0, { type: "ready", round: 0 });
+    expect(h.saved().tutorial?.readyIds).toEqual(["p1"]);
+    const category = h.saved().category,
+      deadline = h.saved().endsAt;
+    const resumed = new BrainbreakRoom(h.ctx, { DB: h.db } as Env);
+    await h.ready();
+    await resumed.webSocketMessage(
+      h.sockets[1] as unknown as WebSocket,
+      JSON.stringify({ type: "sync" }),
+    );
+    expect(h.saved().tutorial?.readyIds).toEqual(["p1"]);
+    expect(h.saved().category).toBe(category);
+    expect(h.saved().endsAt).toBe(deadline);
+  });
+  it("requires the fixed roster to become ready and starts a fresh game clock after the final readiness", async () => {
+    const h = harness(lobbyState());
+    await h.ready();
+    await action(h, 0, { type: "start", mode: "memory", tutorials: true });
+    const tutorialDeadline = h.saved().endsAt;
+    await action(h, 0, { type: "ready", round: 1 });
+    expect(lastError(h.sockets[0])).toBe("INVALID_REQUEST");
+    expect(h.saved().tutorial?.readyIds).toEqual([]);
+    await action(h, 0, { type: "ready", round: 0 });
+    await action(h, 1, { type: "ready", round: 0 });
+    expect(h.saved().phase).toBe("tutorial");
+    expect(h.saved().endsAt).toBe(tutorialDeadline);
+    expect(h.saved().puzzle).toBeUndefined();
+    const before = Date.now();
+    await action(h, 2, { type: "ready", round: 0 });
+    const q = currentQuestion(h.saved())!;
+    expect(h.saved().phase).toBe("question");
+    expect(h.saved().tutorial).toBeUndefined();
+    expect(h.saved().endsAt).toBeGreaterThanOrEqual(before + puzzleDuration(q));
+    expect(h.saved().puzzle?.previewEndsAt).toBe(h.saved().endsAt! - 45_000);
+    expect(h.saved().puzzle?.questionId).toBe(q.id);
+  });
+  it("preserves the45-second fallback for an offline unready player and starts from actual timeout handling time", async () => {
+    const h = harness(lobbyState());
+    await h.ready();
+    await action(h, 0, { type: "start", mode: "trivia", tutorials: true });
+    h.sockets.splice(2);
+    await action(h, 0, { type: "ready", round: 0 });
+    await action(h, 1, { type: "ready", round: 0 });
+    await h.room.alarm();
+    expect(h.saved().phase).toBe("tutorial");
+    h.saved().endsAt = Date.now() - 12_000;
+    const resumed = new BrainbreakRoom(h.ctx, { DB: h.db } as Env);
+    await h.ready();
+    const before = Date.now();
+    await resumed.alarm();
+    expect(h.saved().phase).toBe("question");
+    expect(h.saved().endsAt).toBeGreaterThanOrEqual(before + 45_000);
+    expect(h.saved().players.p3).toBeTruthy();
+  });
+  it("uses a new tutorial each guided round and keeps subsequent solutions and prior role data private", async () => {
+    const s = engineState("wavelength");
+    s.guided = true;
+    s.mode = "mixed";
+    s.mixedCategories = ["wavelength"];
+    s.phase = "reveal";
+    s.endsAt = Date.now() - 1;
+    s.answers[currentQuestion(s)!.id] = { p1: { value: "captain", points: 0 } };
+    const h = harness(s);
+    await h.ready();
+    await h.room.alarm();
+    expect(h.saved().round).toBe(1);
+    expect(h.saved().phase).toBe("tutorial");
+    expect(h.saved().category).not.toBe("wavelength");
+    expect(h.saved().tutorial?.readyIds).toEqual([]);
+    const view = roomView(h.saved(), "p1", "en", new Set());
+    expect(view.puzzle).toBeUndefined();
+    expect(view.question).toBeUndefined();
+    expect(view.me.answer).toBeUndefined();
+    expect(view.players.every((p) => !p.answered)).toBe(true);
+    expect(JSON.stringify(view)).not.toContain("captain");
+    await action(h, 0, { type: "ready", round: 0 });
+    expect(lastError(h.sockets[0])).toBe("INVALID_REQUEST");
+  });
+  it("balances creative, visual, knowledge and brain games without selecting repeat categories or revealing later choices", () => {
+    const s = lobbyState();
+    s.guided = true;
+    s.mode = "mixed";
+    s.phase = "tutorial";
+    for (let round = 0; round < 6; round++) {
+      s.round = round;
+      selectRoundCategory(s, () => 0);
+      s.tutorial = { category: s.category!, readyIds: [] };
+      expect(roomView(s, "p1", "en", new Set()).question).toBeUndefined();
+      expect(s.adaptive).toBeUndefined();
+    }
+    expect(new Set(s.mixedCategories).size).toBe(6);
+    expect(s.mixedCategories).toContain("drawing");
+    expect(s.mixedCategories).toContain("sets");
+    expect(s.mixedCategories).toContain("trivia");
+    expect(s.mixedCategories).toContain("logic");
+  });
+});
+
+describe("durable puzzle server integration", () => {
+  it("persists repeated private code attempts across reload and forbids the ordinary answer scoring route", async () => {
+    const s = engineState("code"),
+      q = currentQuestion(s)!,
+      h = harness(s);
+    await h.ready();
+    const definition = q.puzzle!;
+    if (definition.kind !== "code") throw new Error("fixture");
+    let wrong = definition.symbols[0].repeat(definition.secret.length);
+    if (wrong === definition.secret)
+      wrong = definition.symbols[1].repeat(definition.secret.length);
+    await action(h, 0, {
+      type: "answer",
+      questionId: q.id,
+      value: definition.secret,
+    });
+    expect(lastError(h.sockets[0])).toBe("INVALID_REQUEST");
+    await action(h, 0, {
+      type: "puzzleAction",
+      questionId: q.id,
+      action: { kind: "guess", value: wrong },
+    });
+    expect(h.saved().puzzle?.players.p1.attempts).toBe(1);
+    expect(h.saved().answers[q.id]).toBeUndefined();
+    expect(h.writes).toHaveLength(0);
+    const other = roomView(h.saved(), "p2", "en", new Set());
+    expect(other.puzzle?.progress.guesses).toBeUndefined();
+    expect(other.question).not.toHaveProperty("puzzle");
+    expect(other.puzzle?.solution).toBeUndefined();
+    const resumed = new BrainbreakRoom(h.ctx, { DB: h.db } as Env);
+    await h.ready();
+    await resumed.webSocketMessage(
+      h.sockets[0] as unknown as WebSocket,
+      JSON.stringify({ type: "sync" }),
+    );
+    expect(
+      JSON.parse(h.sockets[0].messages.at(-1)!).state.puzzle.progress.attempts,
+    ).toBe(1);
+    await resumed.webSocketMessage(
+      h.sockets[0] as unknown as WebSocket,
+      JSON.stringify({
+        type: "puzzleAction",
+        questionId: q.id,
+        action: { kind: "guess", value: definition.secret },
+      }),
+    );
+    expect(h.saved().answers[q.id].p1.points).toBe(1000);
+    expect(h.saved().phase).toBe("question");
+    await resumed.webSocketMessage(
+      h.sockets[0] as unknown as WebSocket,
+      JSON.stringify({
+        type: "puzzleAction",
+        questionId: q.id,
+        action: { kind: "guess", value: definition.secret },
+      }),
+    );
+    expect(lastError(h.sockets[0])).toBe("ALREADY_ANSWERED");
+  });
+  it("scores all complete engine progress once on early reveal and retries D1 after reconstruction", async () => {
+    const s = engineState("countries"),
+      q = currentQuestion(s)!,
+      h = harness(s);
+    await h.ready();
+    h.fail(true);
+    for (let index = 0; index < 3; index++)
+      await action(h, index, {
+        type: "puzzleAction",
+        questionId: q.id,
+        action: { kind: "select", ids: [q.answer] },
+      });
+    expect(h.saved().phase).toBe("reveal");
+    expect(Object.values(h.saved().players).map((p) => p.score)).toEqual([
+      1000, 1000, 1000,
+    ]);
+    expect(h.saved().adaptive?.history[0]).toMatchObject({
+      successCount: 3,
+      eligibleCount: 3,
+      nextDifficulty: "hard",
+    });
+    expect(h.saved().saveError).toBe(true);
+    const resumed = new BrainbreakRoom(h.ctx, { DB: h.db } as Env);
+    await h.ready();
+    h.fail(false);
+    await resumed.alarm();
+    expect(Object.values(h.saved().players).map((p) => p.score)).toEqual([
+      1000, 1000, 1000,
+    ]);
+    expect(h.saved().adaptive?.history).toHaveLength(1);
+    expect(h.saved().saveError).toBe(false);
+  });
+  it("commits partial connections points at timeout and retains nonanswers in adaptive eligibility", async () => {
+    const s = engineState("connections"),
+      q = currentQuestion(s)!,
+      h = harness(s);
+    await h.ready();
+    const puzzle = q.puzzle!;
+    if (puzzle.kind !== "connections") throw new Error("fixture");
+    await action(h, 0, {
+      type: "puzzleAction",
+      questionId: q.id,
+      action: { kind: "select", ids: puzzle.groups[0].ids },
+    });
+    expect(h.saved().answers[q.id]).toBeUndefined();
+    const partial = puzzleResult(q, h.saved().puzzle!, "p1").points;
+    expect(partial).toBeGreaterThan(0);
+    expect(partial).toBeLessThan(1000);
+    h.saved().endsAt = Date.now() - 1;
+    const resumed = new BrainbreakRoom(h.ctx, { DB: h.db } as Env);
+    await h.ready();
+    await resumed.alarm();
+    expect(h.saved().players.p1.score).toBe(partial);
+    expect(h.saved().players.p2.score).toBe(0);
+    expect(h.saved().adaptive?.history[0]).toMatchObject({
+      successCount: 0,
+      eligibleCount: 3,
+      nextDifficulty: "easy",
+    });
+    expect(h.saved().puzzle?.players.p1.done).toBe(true);
+    expect(h.saved().answers[q.id].p1.points).toBe(partial);
+  });
+  it("broadcasts memory preview expiry once and preserves the full recall deadline after restart", async () => {
+    const s = engineState("memory"),
+      q = currentQuestion(s)!,
+      h = harness(s);
+    await h.ready();
+    const puzzle = q.puzzle!;
+    if (puzzle.kind !== "memory") throw new Error("fixture");
+    await action(h, 0, {
+      type: "puzzleAction",
+      questionId: q.id,
+      action: { kind: "select", ids: puzzle.sequence },
+    });
+    expect(lastError(h.sockets[0])).toBe("WRONG_PHASE");
+    expect(roomView(h.saved(), "p1", "de", new Set()).puzzle?.sequence).toEqual(
+      puzzle.sequence,
+    );
+    const deadline = h.saved().endsAt;
+    h.saved().puzzle!.previewEndsAt = Date.now() - 1;
+    const resumed = new BrainbreakRoom(h.ctx, { DB: h.db } as Env);
+    await h.ready();
+    await resumed.alarm();
+    expect(h.saved().endsAt).toBe(deadline);
+    expect(h.alarm()).toBe(deadline);
+    expect(
+      JSON.parse(h.sockets[0].messages.at(-1)!).state.puzzle.sequence,
+    ).toBeUndefined();
+    await resumed.webSocketMessage(
+      h.sockets[0] as unknown as WebSocket,
+      JSON.stringify({
+        type: "puzzleAction",
+        questionId: q.id,
+        action: { kind: "select", ids: puzzle.sequence },
+      }),
+    );
+    expect(h.saved().answers[q.id].p1.points).toBe(1000);
+    expect(h.saved().phase).toBe("question");
+  });
+  it("keeps wavelength target private, supplies fallback after15s, rotates/excludes captain, and scores their contribution", async () => {
+    const s = engineState("wavelength"),
+      q = currentQuestion(s)!,
+      h = harness(s);
+    await h.ready();
+    const puzzle = q.puzzle!;
+    if (puzzle.kind !== "wavelength") throw new Error("fixture");
+    expect(s.puzzle?.captainId).toBe("p1");
+    expect(s.adaptive?.eligible[q.id]).toEqual(["p2", "p3"]);
+    expect(roomView(s, "p1", "de", new Set()).puzzle?.target).toBe(
+      puzzle.target,
+    );
+    expect(roomView(s, "p2", "en", new Set()).puzzle?.target).toBeUndefined();
+    await action(h, 1, {
+      type: "puzzleAction",
+      questionId: q.id,
+      action: { kind: "guess", value: String(puzzle.target) },
+    });
+    expect(lastError(h.sockets[1])).toBe("WAIT_FOR_CLUE");
+    h.saved().puzzle!.clueEndsAt = Date.now() - 1;
+    const resumed = new BrainbreakRoom(h.ctx, { DB: h.db } as Env);
+    await h.ready();
+    await resumed.alarm();
+    expect(h.saved().puzzle?.automaticClue).toBe(true);
+    expect(h.alarm()).toBe(h.saved().endsAt);
+    for (const socket of h.sockets.slice(1))
+      await resumed.webSocketMessage(
+        socket as unknown as WebSocket,
+        JSON.stringify({
+          type: "puzzleAction",
+          questionId: q.id,
+          action: { kind: "guess", value: String(puzzle.target) },
+        }),
+      );
+    expect(h.saved().phase).toBe("reveal");
+    expect(Object.values(h.saved().players).map((p) => p.score)).toEqual([
+      1000, 1000, 1000,
+    ]);
+    expect(h.saved().answers[q.id].p1.value).toBe("captain");
+    expect(h.saved().adaptive?.history[0]).toMatchObject({
+      successCount: 2,
+      eligibleCount: 2,
+    });
+    const next = h.saved();
+    next.round = 1;
+    next.phase = "question";
+    beginRound(next, () => 0);
+    initializePuzzle(next, Date.now());
+    expect(next.puzzle?.captainId).toBe("p2");
+  });
+  it("accepts older package snapshots lacking all new banks while rejecting malformed present puzzle definitions", () => {
+    const old = structuredClone(packages[0]);
+    for (const category of PUZZLE_CATEGORIES)
+      delete (old.questions as Partial<WeekPackage["questions"]>)[category];
+    expect(selectPackage([old]).pack.id).toBe(old.id);
+    expect(availableCategories(old)).toHaveLength(8);
+    const s = state();
+    s.pack = old;
+    s.category = "wordle";
+    expect(currentQuestion(s)).toBeUndefined();
+    const bad = structuredClone(packages[0]);
+    delete bad.questions.wordle[0].puzzle;
+    expect(() => selectPackage([bad])).toThrow("Invalid puzzle");
+  });
+});
+
+describe("preview delivery during D1 latency", () => {
+  it("broadcasts a durably initialized memory round before waiting for the D1 snapshot", async () => {
+    const s = state();
+    s.pack = structuredClone(packages[0]);
+    s.category = "memory";
+    s.mode = "memory";
+    s.guided = true;
+    s.phase = "tutorial";
+    s.tutorial = { category: "memory", readyIds: ["p1", "p2"] };
+    s.endsAt = Date.now() + 45_000;
+    const h = harness(s);
+    await h.ready();
+    const original = h.db.batch.bind(h.db);
+    let unblock!: () => void;
+    let entered!: () => void;
+    const enteredD1 = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const blocked = new Promise<void>((resolve) => {
+      unblock = resolve;
+    });
+    Object.assign(h.db, {
+      batch: async (statements: D1PreparedStatement[]) => {
+        entered();
+        await blocked;
+        return original(statements);
+      },
+    });
+    const finalReady = action(h, 2, { type: "ready", round: 0 });
+    await enteredD1;
+    expect(h.saved().phase).toBe("question");
+    expect(h.saved().puzzle).toBeTruthy();
+    const view = JSON.parse(h.sockets[0].messages.at(-1)!).state;
+    expect(view.phase).toBe("question");
+    expect(view.puzzle.sequence?.length).toBeGreaterThan(0);
+    expect(view.saving).toBe(true);
+    expect(view.puzzle.previewEndsAt).toBe(h.saved().puzzle?.previewEndsAt);
+    unblock();
+    await finalReady;
+    expect(h.saved().saveError).toBe(false);
+  });
+});
+
+describe("game-specific duration after readiness", () => {
+  it("starts Wordle with a fresh75-second deadline and preserves it across attempts and reconnect", async () => {
+    const h = harness(lobbyState());
+    await h.ready();
+    await action(h, 0, { type: "start", mode: "wordle", tutorials: true });
+    expect(h.saved().phase).toBe("tutorial");
+    await action(h, 0, { type: "ready", round: 0 });
+    await action(h, 1, { type: "ready", round: 0 });
+    const before = Date.now();
+    await action(h, 2, { type: "ready", round: 0 });
+    const question = currentQuestion(h.saved())!,
+      deadline = h.saved().endsAt!;
+    expect(puzzleDuration(question)).toBe(75_000);
+    expect(deadline).toBeGreaterThanOrEqual(before + 75_000);
+    expect(deadline).toBeLessThanOrEqual(Date.now() + 75_000);
+    expect(h.alarm()).toBe(deadline);
+    const puzzle = question.puzzle!;
+    if (puzzle.kind !== "wordle") throw new Error("fixture");
+    await action(h, 0, {
+      type: "puzzleAction",
+      questionId: question.id,
+      action: { kind: "guess", value: puzzle.word },
+    });
+    expect(h.saved().phase).toBe("question");
+    expect(h.saved().endsAt).toBe(deadline);
+    const resumed = new BrainbreakRoom(h.ctx, { DB: h.db } as Env);
+    await h.ready();
+    await resumed.webSocketMessage(
+      h.sockets[1] as unknown as WebSocket,
+      JSON.stringify({ type: "sync" }),
+    );
+    expect(h.saved().endsAt).toBe(deadline);
+    expect(JSON.parse(h.sockets[1].messages.at(-1)!).state.endsAt).toBe(
+      deadline,
+    );
+    expect(h.saved().answers[question.id].p1.points).toBe(1000);
   });
 });

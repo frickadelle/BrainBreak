@@ -5,6 +5,13 @@ import type {
   DrawingStroke,
   ServerMessage,
 } from "../shared/types";
+import {
+  applyPuzzleAction,
+  settlePuzzleRound,
+  puzzleResult,
+  puzzleDuration,
+  nextPuzzleTransition,
+} from "./puzzles";
 import { validGeoQuestion } from "./geography";
 import { packages } from "./content/index";
 import {
@@ -23,6 +30,9 @@ import {
   beginRound,
   finishRound,
   initializeDrawing,
+  initializePuzzle,
+  selectRoundCategory,
+  TUTORIAL_MS,
   initializeAssociation,
   matchesDrawingWord,
   normalizedStroke,
@@ -238,20 +248,114 @@ export class BrainbreakRoom {
             if (this.state.dirty && !advanced) await this.flush();
             break;
           }
-          case "start":
+          case "start": {
             if (player.id !== this.state.hostId)
               throw new ActionError("HOST_ONLY");
             if (this.state.phase !== "lobby")
               throw new ActionError("WRONG_PHASE");
             if (this.connectedPlayers().size < 2)
               throw new ActionError("NOT_ENOUGH_PLAYERS");
-            this.state.phase = "voting";
-            this.state.endsAt = Date.now() + VOTE_MS;
+            if (
+              message.tutorials !== undefined &&
+              typeof message.tutorials !== "boolean"
+            )
+              throw new ActionError("INVALID_REQUEST");
+            if (message.mode !== undefined) {
+              if (
+                !availableModes(
+                  this.state.pack,
+                  Object.keys(this.state.players).length,
+                ).includes(message.mode)
+              )
+                throw new ActionError("INVALID_REQUEST");
+              this.state.mode = message.mode;
+              this.state.category =
+                message.mode === "mixed" ? undefined : message.mode;
+              this.state.guided = message.tutorials === true;
+              if (this.state.guided) this.beginTutorial(Date.now());
+              else this.startQuestion(Date.now());
+            } else {
+              if (message.tutorials) throw new ActionError("INVALID_REQUEST");
+              this.state.phase = "voting";
+              this.state.endsAt = Date.now() + VOTE_MS;
+            }
             this.state.expiresAt = Date.now() + LOBBY_TTL_MS;
             this.state.dirty = true;
             await this.persist();
             await this.flush();
             break;
+          }
+          case "ready": {
+            if (this.state.phase !== "tutorial" || !this.state.tutorial)
+              throw new ActionError("WRONG_PHASE");
+            if (deadlinePassed) throw new ActionError("TOO_LATE");
+            if (
+              !Number.isInteger(message.round) ||
+              message.round !== this.state.round
+            )
+              throw new ActionError("INVALID_REQUEST");
+            if (!this.state.tutorial.readyIds.includes(player.id))
+              this.state.tutorial.readyIds.push(player.id);
+            if (this.allReady()) {
+              this.startQuestion(Date.now());
+              this.state.dirty = true;
+              await this.persist();
+              await this.flush();
+            } else await this.persist();
+            break;
+          }
+          case "puzzleAction": {
+            if (deadlinePassed) throw new ActionError("TOO_LATE");
+            if (this.state.phase !== "question" || !this.state.puzzle)
+              throw new ActionError("WRONG_PHASE");
+            const question = currentQuestion(this.state)!;
+            if (!question.puzzle || message.questionId !== question.id)
+              throw new ActionError("INVALID_REQUEST");
+            let changed: boolean;
+            try {
+              changed = applyPuzzleAction(
+                question,
+                this.state.puzzle,
+                player.id,
+                message.action,
+                Date.now(),
+              );
+            } catch (error) {
+              if (
+                error instanceof Error &&
+                "code" in error &&
+                typeof error.code === "string"
+              )
+                throw new ActionError(error.code as ErrorCode);
+              throw error;
+            }
+            if (!changed) break;
+            const progress = this.state.puzzle.players[player.id];
+            const previouslyDirty = this.state.dirty;
+            if (progress?.done) {
+              const result = puzzleResult(
+                question,
+                this.state.puzzle,
+                player.id,
+              );
+              (this.state.answers[question.id] ??= {})[player.id] = {
+                value: result.value,
+                points: result.points,
+              };
+              this.state.dirty = true;
+            }
+            if (this.allAnswered()) {
+              this.finishQuestion(Math.min(this.state.endsAt!, Date.now()));
+              this.state.dirty = true;
+              await this.persist();
+              await this.flush();
+            } else {
+              await this.persist();
+              if (progress?.done)
+                await this.flushAnswer(question.id, player.id, previouslyDirty);
+            }
+            break;
+          }
           case "vote":
             if (deadlinePassed) throw new ActionError("TOO_LATE");
             if (this.state.phase !== "voting")
@@ -394,6 +498,7 @@ export class BrainbreakRoom {
             if (this.state.phase !== "question" || !this.state.category)
               throw new ActionError("WRONG_PHASE");
             const question = currentQuestion(this.state)!;
+            if (question.puzzle) throw new ActionError("INVALID_REQUEST");
             if (message.questionId !== question.id)
               throw new ActionError("INVALID_ANSWER");
             if (this.state.answers[question.id]?.[player.id])
@@ -513,6 +618,10 @@ export class BrainbreakRoom {
       this.finishVoting(Date.now());
       changed = true;
     }
+    if (this.allReady() && Date.now() < this.state.endsAt!) {
+      this.startQuestion(Date.now());
+      changed = true;
+    }
     if (this.allAnswered()) {
       this.finishQuestion(Math.min(this.state.endsAt!, Date.now()));
       changed = true;
@@ -521,6 +630,8 @@ export class BrainbreakRoom {
       const deadline = this.state.endsAt;
       if (this.state.phase === "voting") {
         this.finishVoting(deadline);
+      } else if (this.state.phase === "tutorial") {
+        this.startQuestion(Date.now());
       } else if (this.state.phase === "question") {
         this.finishQuestion(deadline);
       } else if (this.state.phase === "reveal") {
@@ -530,11 +641,8 @@ export class BrainbreakRoom {
           this.state.expiresAt = Date.now() + RESULTS_TTL_MS;
         } else {
           this.state.round++;
-          this.state.phase = "question";
-          this.state.endsAt = deadline + QUESTION_MS;
-          beginRound(this.state);
-          initializeDrawing(this.state);
-          initializeAssociation(this.state);
+          if (this.state.guided) this.beginTutorial(Date.now());
+          else this.startQuestion(deadline);
         }
       } else break;
       changed = true;
@@ -562,11 +670,36 @@ export class BrainbreakRoom {
     );
     this.state.category =
       this.state.mode === "mixed" ? undefined : this.state.mode;
+    if (this.state.guided) this.beginTutorial(deadline);
+    else this.startQuestion(deadline);
+  }
+  private beginTutorial(startedAt: number): void {
+    if (!this.state) return;
+    selectRoundCategory(this.state);
+    this.state.phase = "tutorial";
+    this.state.endsAt = startedAt + TUTORIAL_MS;
+    this.state.tutorial = { category: this.state.category!, readyIds: [] };
+  }
+  private allReady(): boolean {
+    return Boolean(
+      this.state?.phase === "tutorial" &&
+      this.state.tutorial &&
+      Object.keys(this.state.players).every((id) =>
+        this.state!.tutorial!.readyIds.includes(id),
+      ),
+    );
+  }
+  private startQuestion(startedAt: number): void {
+    if (!this.state) return;
     this.state.phase = "question";
-    this.state.endsAt = deadline + QUESTION_MS;
+    delete this.state.tutorial;
     beginRound(this.state);
+    const question = currentQuestion(this.state)!;
+    this.state.endsAt =
+      startedAt + (question.puzzle ? puzzleDuration(question) : QUESTION_MS);
     initializeDrawing(this.state);
     initializeAssociation(this.state);
+    initializePuzzle(this.state, startedAt);
   }
   private allAnswered(): boolean {
     if (!this.state || this.state.phase !== "question") return false;
@@ -597,6 +730,20 @@ export class BrainbreakRoom {
   private finishQuestion(deadline: number): void {
     if (!this.state || this.state.phase !== "question") return;
     const question = currentQuestion(this.state)!;
+    if (question.puzzle && this.state.puzzle) {
+      settlePuzzleRound(question, this.state.puzzle, Date.now());
+      const results = Object.keys(this.state.players).map(
+        (id) => [id, puzzleResult(question, this.state!.puzzle!, id)] as const,
+      );
+      for (const [id, result] of results) {
+        (this.state.answers[question.id] ??= {})[id] = {
+          value: result.value,
+          points: result.points,
+        };
+        if (this.state.puzzle.players[id])
+          this.state.puzzle.players[id].done = true;
+      }
+    }
     let associationPoints: Record<string, number> | undefined;
     if (question.category === "association" && this.state.association) {
       settleAssociationClues(question, this.state.association, Date.now());
@@ -644,11 +791,13 @@ export class BrainbreakRoom {
     for (const [id, answer] of Object.entries(
       this.state.answers[question.id] ?? {},
     )) {
-      answer.points = associationPoints
-        ? (associationPoints[id] ?? 0)
-        : id === artistId
-          ? artistPoints
-          : pointsFor(question, answer.value);
+      answer.points = question.puzzle
+        ? answer.points
+        : associationPoints
+          ? (associationPoints[id] ?? 0)
+          : id === artistId
+            ? artistPoints
+            : pointsFor(question, answer.value);
       this.state.players[id].score += answer.points;
     }
     finishRound(this.state);
@@ -656,20 +805,19 @@ export class BrainbreakRoom {
     this.state.endsAt = deadline + REVEAL_MS;
   }
   private async settleClues(): Promise<void> {
-    if (
-      !this.state ||
-      this.state.phase !== "question" ||
-      this.state.category !== "association" ||
-      !this.state.association
-    )
-      return;
-    if (
-      settleAssociationClues(
-        currentQuestion(this.state)!,
+    if (!this.state || this.state.phase !== "question") return;
+    const question = currentQuestion(this.state)!;
+    let changed = false;
+    if (question.category === "association" && this.state.association)
+      changed = settleAssociationClues(
+        question,
         this.state.association,
         Date.now(),
-      )
-    ) {
+      );
+    if (question.puzzle && this.state.puzzle)
+      changed =
+        settlePuzzleRound(question, this.state.puzzle, Date.now()) || changed;
+    if (changed) {
       await this.persist();
       this.broadcast();
     }
@@ -680,6 +828,8 @@ export class BrainbreakRoom {
     previouslyDirty: boolean,
   ): Promise<void> {
     if (!this.state) return;
+    // The DO journal is already committed; acknowledgement must not wait on D1 latency.
+    this.broadcast();
     try {
       const answer = this.state.answers[questionId][playerId];
       await this.env.DB.prepare(
@@ -705,6 +855,8 @@ export class BrainbreakRoom {
   }
   private async flush(): Promise<void> {
     if (!this.state) return;
+    // Publish committed timers/preview immediately while D1 persists the snapshot.
+    this.broadcast();
     const s = this.state;
     try {
       const statements = [
@@ -821,7 +973,16 @@ export class BrainbreakRoom {
       )
     )
       deadlines.push(this.state!.association.clueEndsAt);
-    if (this.allAnswered() || this.allVoted()) deadlines.push(now + 1);
+    if (
+      this.state!.phase === "question" &&
+      this.state!.puzzle &&
+      currentQuestion(this.state!)?.puzzle
+    ) {
+      const transition = nextPuzzleTransition(this.state!.puzzle);
+      if (transition !== undefined) deadlines.push(transition);
+    }
+    if (this.allAnswered() || this.allVoted() || this.allReady())
+      deadlines.push(now + 1);
     if (this.state!.saveError) deadlines.push(now + 5_000);
     for (const socket of this.ctx.getWebSockets()) {
       const c = socket.deserializeAttachment() as Connection;

@@ -37,6 +37,13 @@ function room(overrides: Partial<RoomView> = {}): RoomView {
       fallback: false,
     },
     votes: {
+      code: 0,
+      sets: 0,
+      connections: 0,
+      wavelength: 0,
+      memory: 0,
+      wordle: 0,
+      countries: 0,
       trivia: 0,
       logic: 0,
       estimate: 0,
@@ -244,5 +251,84 @@ describe("game sound cues", () => {
         }),
       ),
     ).toBeNull();
+  });
+});
+
+describe("guided puzzle sound cues", () => {
+  it("keeps tutorials and readiness silent, then announces the actual game start", () => {
+    const tutorial = room({
+      phase: "tutorial",
+      question: undefined,
+      tutorial: { category: "wordle", readyIds: [] },
+    });
+    const ready = {
+      ...tutorial,
+      tutorial: { category: "wordle" as const, readyIds: ["player-1"] },
+    };
+    expect(
+      soundCue(room({ phase: "lobby", question: undefined }), tutorial),
+    ).toBeNull();
+    expect(soundCue(tutorial, ready)).toBeNull();
+    expect(soundCue(ready, room())).toBe("start");
+  });
+
+  it("acknowledges an accepted private attempt without replaying it on a repeated state", () => {
+    const before = room({
+      puzzle: {
+        kind: "wordle",
+        progress: {
+          attempts: 0,
+          done: false,
+          success: false,
+          points: 0,
+          guesses: [],
+        },
+      },
+    });
+    const after = room({
+      puzzle: {
+        kind: "wordle",
+        progress: {
+          attempts: 1,
+          done: false,
+          success: false,
+          points: 0,
+          guesses: [{ value: "APPLE", feedback: [0, 1, 0, 2, 0] }],
+        },
+      },
+    });
+    expect(soundCue(before, after)).toBe("answer");
+    expect(
+      soundCue(after, { ...after, serverNow: after.serverNow + 10 }),
+    ).toBeNull();
+    expect(soundCue(before, after, false)).toBeNull();
+  });
+
+  it("acknowledges a connection group even when it consumes no wrong attempt", () => {
+    const before = room({
+      puzzle: {
+        kind: "connections",
+        progress: {
+          attempts: 0,
+          done: false,
+          success: false,
+          points: 0,
+          foundGroups: [],
+        },
+      },
+    });
+    const after = room({
+      puzzle: {
+        kind: "connections",
+        progress: {
+          attempts: 0,
+          done: false,
+          success: false,
+          points: 500,
+          foundGroups: ["opaque-group"],
+        },
+      },
+    });
+    expect(soundCue(before, after)).toBe("answer");
   });
 });

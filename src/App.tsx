@@ -50,6 +50,9 @@ import { AssociationGame } from "./AssociationGame";
 import { GeoGame } from "./GeoGame";
 import { OrderInput } from "./OrderInput";
 import { DrawingGame } from "./DrawingGame";
+import { PuzzleGame } from "./PuzzleGame";
+import { Tutorial } from "./Tutorial";
+import { isPuzzleCategory } from "../shared/puzzles";
 
 function roomFromUrl() {
   return (
@@ -78,6 +81,13 @@ function knownRoom(code: string) {
   return !!readLocal(`brainbreak.room.${code}`);
 }
 const icons = {
+  code: CircleHelp,
+  sets: Sparkles,
+  connections: Link2,
+  wavelength: Target,
+  memory: Brain,
+  wordle: ListOrdered,
+  countries: Globe2,
   association: Link2,
   geography: Globe2,
   mixed: Shuffle,
@@ -94,8 +104,21 @@ function answerText(
   answer: string | number | null | undefined,
   language: Language,
 ): string {
-  if (answer === null || answer === undefined)
+  if (answer === null || answer === undefined || answer === "")
     return copy[language].notSubmitted;
+  if (answer === "captain")
+    return language === "de" ? "Hinweis gegeben" : "Clue given";
+  if (question?.category === "sets")
+    return language === "de"
+      ? "Drei Karten ausgewählt"
+      : "Three cards selected";
+  if (question?.category === "connections")
+    return `${String(answer).split(",").filter(Boolean).length} ${language === "de" ? "Gruppen" : "groups"}`;
+  if (
+    isPuzzleCategory(question?.category ?? "") &&
+    question?.category !== "countries"
+  )
+    return String(answer);
   if (question?.category === "drawing" && answer === "artist")
     return copy[language].drawingArtistContribution;
   if (question?.category === "geography") {
@@ -275,6 +298,7 @@ function Rules({ language, close }: { language: Language; close: () => void }) {
         <span className="eyebrow">{t.rulesEyebrow}</span>
         <h2 id="rules-heading">{t.rulesTitle}</h2>
         <p>{t.ruleChoice}</p>
+        <p>{t.rulePuzzles}</p>
         <p>
           {language === "de"
             ? "Wenn alle abgegeben haben, endet die Runde sofort. Beim Zeichnen müssen alle Ratenden richtig liegen. Im Spiele-Mix kommt jede Runde ein anderes Spiel. Start ab zwei Personen."
@@ -704,12 +728,24 @@ export default function App() {
                   </span>
                 </div>
                 <div className="category-peek">
-                  {games.map((cat) => (
-                    <div key={cat} className={`peek-${cat}`}>
-                      <CategoryIcon category={cat} size={20} />
-                      <span>{categories[language][cat].title}</span>
-                    </div>
-                  ))}
+                  <div>
+                    <Shuffle size={20} />
+                    <span>
+                      {language === "de"
+                        ? "Zufälliger Mix aus "
+                        : "Random mix of "}
+                      {games.filter((game) => game !== "mixed").length}
+                      {language === "de" ? " Spielarten" : " game types"}
+                    </span>
+                  </div>
+                  <div>
+                    <CircleHelp size={20} />
+                    <span>
+                      {language === "de"
+                        ? "Erklärung vor jeder Runde"
+                        : "Instructions before every round"}
+                    </span>
+                  </div>
                 </div>
               </div>
               <div className="entry-card">
@@ -934,7 +970,10 @@ export default function App() {
                       </div>
                       <div className="lobby-rules">
                         <span>
-                          <Clock3 size={18} />6 × ≤45 s
+                          <Clock3 size={18} />
+                          {language === "de"
+                            ? "6 Spiele mit Erklärung"
+                            : "6 games with instructions"}
                         </span>
                         <span>
                           <Trophy size={18} />
@@ -952,7 +991,20 @@ export default function App() {
                         <>
                           <button
                             className="button primary start-button"
-                            onClick={() => room.send({ type: "start" })}
+                            onClick={() =>
+                              room.send(
+                                (
+                                  state.availableModes ??
+                                  state.availableCategories
+                                ).includes("mixed")
+                                  ? {
+                                      type: "start",
+                                      mode: "mixed",
+                                      tutorials: true,
+                                    }
+                                  : { type: "start" },
+                              )
+                            }
                             disabled={
                               state.players.filter((p) => p.connected).length <
                                 2 || !online
@@ -1002,6 +1054,15 @@ export default function App() {
                       </p>
                     </aside>
                   </div>
+                ) : state.phase === "tutorial" ? (
+                  <Tutorial
+                    key={`${state.code}-${state.round}`}
+                    state={state}
+                    language={language}
+                    online={online}
+                    offset={room.clockOffset.current}
+                    send={room.send}
+                  />
                 ) : state.phase === "voting" ? (
                   <section className="voting-stage">
                     <div className="stage-heading">
@@ -1123,6 +1184,17 @@ export default function App() {
                           send={room.send}
                         />
                       )}
+                      {state.puzzle && state.question && (
+                        <PuzzleGame
+                          key={state.question.id}
+                          state={state}
+                          language={language}
+                          online={online}
+                          offset={room.clockOffset.current}
+                          send={room.send}
+                          error={room.error}
+                        />
+                      )}
                       {state.phase === "question" &&
                         state.question?.category === "geography" && (
                           <GeoGame
@@ -1135,7 +1207,8 @@ export default function App() {
                           />
                         )}
                       {state.phase === "question" && state.question
-                        ? !["drawing", "association", "geography"].includes(
+                        ? !isPuzzleCategory(state.question.category) &&
+                          !["drawing", "association", "geography"].includes(
                             state.question.category,
                           ) && (
                             <AnswerPanel
@@ -1154,15 +1227,23 @@ export default function App() {
                                 {t.solution}
                               </span>
                               <h2>
-                                {state.category === "association"
+                                {state.category === "sets"
                                   ? language === "de"
-                                    ? "Die Wortverbindungen"
-                                    : "The word connections"
-                                  : answerText(
-                                      state.question,
-                                      state.reveal.answer,
-                                      language,
-                                    )}
+                                    ? "Eine passende Gruppe"
+                                    : "A matching group"
+                                  : state.category === "connections"
+                                    ? language === "de"
+                                      ? "Die Wortgruppen"
+                                      : "The word groups"
+                                    : state.category === "association"
+                                      ? language === "de"
+                                        ? "Die Wortverbindungen"
+                                        : "The word connections"
+                                      : answerText(
+                                          state.question,
+                                          state.reveal.answer,
+                                          language,
+                                        )}
                                 {state.question?.unit && (
                                   <small> {state.question.unit}</small>
                                 )}

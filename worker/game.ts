@@ -27,8 +27,18 @@ import {
   successfulGeoGuess,
   validGeoQuestion,
 } from "./geography";
+import { isPuzzleCategory, type PuzzleRound } from "../shared/puzzles";
+import {
+  validPuzzleQuestion,
+  createPuzzleRound,
+  puzzleView,
+  puzzleEligible,
+  puzzleResult,
+  puzzleReveal,
+} from "./puzzles";
 import { parseLocalizedNumber } from "../shared/numbers";
 
+export const TUTORIAL_MS = 45_000;
 export const VOTE_MS = 30_000;
 export const QUESTION_MS = 45_000;
 export const REVEAL_MS = 10_000;
@@ -79,6 +89,9 @@ export interface RoomState {
   category?: Category;
   mode?: GameMode;
   mixedCategories?: Category[];
+  guided?: boolean;
+  tutorial?: { category: Category; readyIds: string[] };
+  puzzle?: PuzzleRound;
   pack: WeekPackage;
   week: string;
   reused: boolean;
@@ -129,22 +142,26 @@ export function selectPackage(
     packages[0];
   if (
     !pack ||
+    !CATEGORIES.some(
+      (c) => Array.isArray(pack.questions[c]) && pack.questions[c].length >= 6,
+    ) ||
     CATEGORIES.some(
       (c) =>
-        !Array.isArray(pack.questions[c]) ||
-        (c === "geography" && pack.questions[c].length === 0
-          ? false
-          : pack.questions[c].length < 6),
+        pack.questions[c] !== undefined &&
+        (!Array.isArray(pack.questions[c]) ||
+          (c === "geography" && pack.questions[c].length === 0
+            ? false
+            : pack.questions[c].length < 6)),
     )
   )
     throw new Error(
       "Every package must contain at least six questions per category",
     );
-  const all = CATEGORIES.flatMap((c) => pack.questions[c]);
+  const all = CATEGORIES.flatMap((c) => pack.questions[c] ?? []);
   if (new Set(all.map((q) => q.id)).size !== all.length)
     throw new Error("Question identities must be unique within a package");
   for (const category of CATEGORIES) {
-    const pool = pack.questions[category];
+    const pool = pack.questions[category] ?? [];
     if (pool.some((q) => q.category !== category))
       throw new Error("Question category mismatch");
     if (
@@ -154,6 +171,8 @@ export function selectPackage(
       throw new Error("Invalid association board or hints");
     if (category === "geography" && pool.some((q) => !validGeoQuestion(q)))
       throw new Error("Unverified geography question");
+    if (isPuzzleCategory(category) && pool.some((q) => !validPuzzleQuestion(q)))
+      throw new Error("Invalid puzzle question");
     const declared = pool.filter((q) => q.difficulty !== undefined);
     if (
       declared.length &&
@@ -239,6 +258,12 @@ export function chooseMode(
 }
 export function roundEligible(state: RoomState): string[] {
   const ids = Object.keys(state.players);
+  if (
+    state.puzzle &&
+    currentQuestion(state)?.puzzle &&
+    state.puzzle.questionId === currentQuestion(state)?.id
+  )
+    return puzzleEligible(state.puzzle, ids);
   if (state.category === "drawing")
     return ids.filter((id) => id !== state.drawing?.artistId);
   if (state.category === "association" && state.association)
@@ -253,11 +278,11 @@ export function roundEligible(state: RoomState): string[] {
 export const DIFFICULTIES: Difficulty[] = ["easy", "medium", "hard"];
 export function currentQuestion(state: RoomState): Question | undefined {
   if (!state.category) return undefined;
-  const pool = state.pack.questions[state.category];
+  const pool = state.pack.questions[state.category] ?? [];
   const id = state.adaptive?.chosenQuestionIds[state.round];
   return id ? pool.find((q) => q.id === id) : pool[state.round];
 }
-export function beginRound(
+export function selectRoundCategory(
   state: RoomState,
   random: () => number = secureRandom,
 ): void {
@@ -269,13 +294,42 @@ export function beginRound(
         Object.keys(state.players).length,
       ).filter((c) => !state.mixedCategories!.includes(c));
       if (!unused.length) throw new Error("Mixed category pool exhausted");
+      let candidates = unused;
+      if (state.guided) {
+        const family = (category: Category) =>
+          category === "drawing" ||
+          category === "association" ||
+          category === "wavelength"
+            ? "creative"
+            : category === "sets" ||
+                category === "memory" ||
+                category === "countries" ||
+                category === "geography"
+              ? "visual"
+              : category === "trivia" ||
+                  category === "truth" ||
+                  category === "estimate"
+                ? "knowledge"
+                : "brain";
+        const used = state.mixedCategories.slice(0, state.round);
+        const count = (category: Category) =>
+          used.filter((c) => family(c) === family(category)).length;
+        const least = Math.min(...unused.map(count));
+        candidates = unused.filter((c) => count(c) === least);
+      }
       state.mixedCategories[state.round] =
-        unused[Math.floor(random() * unused.length)];
+        candidates[Math.floor(random() * candidates.length)];
     }
     state.category = state.mixedCategories[state.round];
   }
+}
+export function beginRound(
+  state: RoomState,
+  random: () => number = secureRandom,
+): void {
+  selectRoundCategory(state, random);
   if (!state.category) return;
-  const pool = state.pack.questions[state.category];
+  const pool = state.pack.questions[state.category] ?? [];
   if (
     !state.adaptive &&
     state.round === 0 &&
@@ -305,7 +359,7 @@ export function beginRound(
   state.adaptive.chosenQuestionIds[state.round] = question.id;
   const roster = Object.keys(state.players);
   const artistId =
-    state.category === "drawing"
+    state.category === "drawing" || question.puzzle?.kind === "wavelength"
       ? roster[state.round % roster.length]
       : undefined;
   const captains =
@@ -367,7 +421,9 @@ export function finishRound(state: RoomState): void {
       answers[id] &&
       (question.category === "association" && state.association
         ? associationCorrect(question, state.association, id, answers[id].value)
-        : successfulAnswer(question, answers[id].value)),
+        : question.puzzle && state.puzzle
+          ? puzzleResult(question, state.puzzle, id).success
+          : successfulAnswer(question, answers[id].value)),
   ).length;
   const next = nextDifficulty(question.difficulty, successes, roster.length);
   adaptive.history.push({
@@ -412,6 +468,16 @@ export function initializeAssociation(state: RoomState): void {
   );
   state.associationScores ??= { green: 0, purple: 0 };
   state.associationHistory ??= [];
+}
+export function initializePuzzle(state: RoomState, startedAt: number): void {
+  const question = currentQuestion(state);
+  if (!question?.puzzle || state.puzzle?.questionId === question.id) return;
+  state.puzzle = createPuzzleRound(
+    question,
+    Object.keys(state.players),
+    state.round,
+    startedAt,
+  );
 }
 export function initializeDrawing(state: RoomState): void {
   if (state.category !== "drawing") return;
@@ -507,7 +573,8 @@ export function roomView(
   browserKey?: string,
 ): RoomView {
   const player = state.players[playerId];
-  const question = currentQuestion(state);
+  const question =
+    state.phase === "tutorial" ? undefined : currentQuestion(state);
   const answers = question ? (state.answers[question.id] ?? {}) : {};
   const translate = (text: { de: string; en?: string }) =>
     text[language] || text.de;
@@ -556,6 +623,24 @@ export function roomView(
     saving: state.dirty,
     saveError: state.saveError,
   };
+  if (state.phase === "tutorial" && state.tutorial)
+    view.tutorial = {
+      category: state.tutorial.category,
+      readyIds: [...state.tutorial.readyIds],
+    };
+  if (
+    question?.puzzle &&
+    state.puzzle &&
+    state.puzzle.questionId === question.id
+  )
+    view.puzzle = puzzleView(
+      question,
+      state.puzzle,
+      playerId,
+      language,
+      now,
+      state.phase === "reveal",
+    );
   if (question?.category === "association" && state.association)
     view.association = associationView(
       question,
@@ -601,13 +686,16 @@ export function roomView(
     };
     if (state.phase === "reveal")
       view.reveal = {
-        answer: question.geography
-          ? JSON.stringify(question.geography.target)
-          : question.association && view.association
-            ? associationTargets(question, view.association.team)
-            : question.drawing
-              ? translate(question.drawing.word)
-              : question.answer,
+        answer:
+          question.puzzle && state.puzzle
+            ? puzzleReveal(question, state.puzzle, playerId, language)
+            : question.geography
+              ? JSON.stringify(question.geography.target)
+              : question.association && view.association
+                ? associationTargets(question, view.association.team)
+                : question.drawing
+                  ? translate(question.drawing.word)
+                  : question.answer,
         explanation: translate(question.explanation),
         scores: Object.keys(state.players).map((id) => ({
           playerId: id,

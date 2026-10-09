@@ -1,4 +1,5 @@
 import type { GameMode, ErrorCode, Language } from "../shared/types";
+import { puzzleNames } from "./puzzleNames";
 export const copy = {
   de: {
     storageBlocked:
@@ -19,7 +20,7 @@ export const copy = {
     headline1: "Kopf an.",
     headline2: "Alltag aus.",
     intro:
-      "Sechs kurze Spiele für eure gemeinsame Pause. Wählt eine Spielart oder spielt jede Runde etwas anderes.",
+      "Sechs verschiedene Spiele für eure gemeinsame Pause. Vor jeder Runde erklären wir kurz, wie sie funktioniert.",
     minutes: "6 kurze Runden",
     players: "2–30 Personen",
     noAccount: "Ohne Account",
@@ -43,8 +44,8 @@ export const copy = {
     people: "Teilnehmer",
     you: "du",
     host: "Host",
-    start: "Abstimmung starten",
-    waitingHost: "Sobald der Host startet, stimmt ihr gemeinsam ab.",
+    start: "Spiele-Mix starten",
+    waitingHost: "Der Host startet den Spiele-Mix, sobald ihr da seid.",
     minimum: "Mindestens 2 Teilnehmer zum Starten.",
     connected: "Live verbunden",
     reconnecting: "Verbindung wird wiederhergestellt …",
@@ -114,12 +115,12 @@ export const copy = {
     reveal: "Der Aha-Moment.",
     solution: "Die richtige Antwort",
     explanation: "So kommt man darauf",
-    nextRound: "Die nächste Aufgabe startet automatisch.",
+    nextRound: "Als Nächstes kommt die Erklärung für das nächste Spiel.",
     points: "Punkte",
     thisRound: "diese Runde",
     results: "Das war Kopfarbeit!",
     resultsHint:
-      "Sechs Aufgaben. Viele Geistesblitze. Bis zur nächsten Teamrunde.",
+      "Die Punkte dieser Session stehen unten. Eure abgeschlossenen Spiele zählen auch zur Wochenrangliste.",
     yourScore: "Deine Punkte",
     sessionRanking: "Diese Runde",
     weekly: "Wochenrangliste",
@@ -127,7 +128,7 @@ export const copy = {
     rank: "Platz",
     name: "Spielname",
     sessions: "Runden",
-    emptyRanking: "Die Bühne ist noch frei. Eure erste Runde macht den Anfang.",
+    emptyRanking: "Noch keine abgeschlossenen Spiele in dieser Woche.",
     saving: "Ergebnisse werden gespeichert …",
     saveError:
       "Das Speichern dauert länger. Deine Ergebnisse bleiben im Raum erhalten. Wir versuchen es automatisch erneut.",
@@ -139,21 +140,23 @@ export const copy = {
     how: "So funktioniert’s",
     step1Title: "Team versammeln",
     step1Text: "Raum öffnen. Link teilen. Alle wählen ihren Spielnamen.",
-    step2Title: "Richtung wählen",
-    step2Text: "Wählt eure Spielart. Sobald alle abgestimmt haben, geht’s los.",
+    step2Title: "Spiel verstehen",
+    step2Text: "Lest die kurze Erklärung und klickt auf Bereit.",
     step3Title: "Gemeinsam grübeln",
     step3Text:
-      "Sechs Aufgaben mit bis zu 45 Sekunden. Sobald alle abgegeben haben, folgt die Auflösung.",
+      "Sechs verschiedene Spiele. Die Spielzeit beginnt nach der Erklärung. Sobald alle fertig sind, folgt die Auflösung.",
     rules: "Spielregeln & Punkte",
     rulesTitle: "Faire Punkte. Klare Regeln.",
     ruleChoice:
       "Trivia, Logik, Kopfrechnen, Wahr oder falsch und Sortieren: 1.000 Punkte für die richtige Antwort, sonst 0. Beim Sortieren muss die ganze Reihenfolge stimmen. Kein Bonus für Geschwindigkeit.",
+    rulePuzzles:
+      "Codeknacker, Wordle, Musterjagd und Länderraten zählen bei Erfolg 1.000 Punkte. Verbindungen und Merkfeld vergeben Teilpunkte. Wellenlänge zieht für jeden Abstandspunkt zum Ziel 40 Punkte von 1.000 ab. Ein Hinweisgeber erhält 1.000 Punkte, sobald jemand mindestens 600 Punkte erreicht.",
     ruleEstimate:
       "Schätzen: bis zu 1.000 Punkte. Der relative Abstand zur Lösung zählt: 10 % daneben = 900 Punkte, 50 % = 500, ab 100 % = 0. Auf ganze Punkte gerundet.",
     ruleFormula:
       "Punkte = max(0, gerundet(1.000 × (1 − |Schätzung − Lösung| / max(|Lösung|, 1))))",
     ruleSecret:
-      "Eine eingeloggte Antwort pro Aufgabe. Beim Zeichenspiel darfst du bis zur richtigen Lösung mehrfach raten. Antworten bleiben bis zur Auflösung verborgen. Alle spielen mit demselben Endzeitpunkt.",
+      "Die Erklärung vor jeder Runde nennt die erlaubten Versuche. Bestätigte Antworten und Versuche bleiben beim Neuladen erhalten. Antworten bleiben bis zur Auflösung verborgen. Alle teilen denselben Endzeitpunkt.",
     ruleIdentity:
       "Deine Gerätekennung erhält Punkte über mehrere Wochen. Gleiche Spielnamen dürfen vorkommen. Wenn du Browserdaten löschst oder das Gerät wechselst, beginnt eine neue Identität.",
     ruleLanguage:
@@ -188,7 +191,7 @@ export const copy = {
     headline1: "Brains on.",
     headline2: "Routine off.",
     intro:
-      "Six quick games for a shared break. Pick a game or play something different each round.",
+      "Six different games for your shared break. Each round starts with a short explanation.",
     minutes: "6 quick rounds",
     players: "2–30 players",
     noAccount: "No account needed",
@@ -212,8 +215,8 @@ export const copy = {
     people: "players",
     you: "you",
     host: "Host",
-    start: "Start the vote",
-    waitingHost: "When the host starts, you’ll vote together.",
+    start: "Start the game mix",
+    waitingHost: "The host starts the game mix when everyone has joined.",
     minimum: "At least 2 players are needed to start.",
     connected: "Connected live",
     reconnecting: "Reconnecting …",
@@ -282,7 +285,7 @@ export const copy = {
     reveal: "The aha moment.",
     solution: "The correct answer",
     explanation: "Here’s why",
-    nextRound: "The next question starts automatically.",
+    nextRound: "Next comes the explanation for the next game.",
     points: "points",
     thisRound: "this question",
     results: "Now that was brainwork!",
@@ -307,21 +310,23 @@ export const copy = {
     how: "Here’s how it works",
     step1Title: "Gather your people",
     step1Text: "Open a room. Share the link. Everyone picks a name.",
-    step2Title: "Pick your challenge",
-    step2Text: "Choose your game type. Start as soon as everyone has voted.",
+    step2Title: "Learn the game",
+    step2Text: "Read the short explanation and click Ready.",
     step3Title: "Put your heads to work",
     step3Text:
-      "Six questions with up to 45 seconds each. Once everyone submits, the answer is revealed.",
+      "Six different games. The timer starts after the explanation. Once everyone finishes, the answer is revealed.",
     rules: "Rules & points",
     rulesTitle: "Fair points. Clear rules.",
     ruleChoice:
       "Trivia, logic, mental maths, true or false and ordering: 1,000 points for a correct answer, otherwise 0. Ordering needs the entire sequence to be correct. No speed bonus.",
+    rulePuzzles:
+      "Codebreaker, Wordle, pattern hunt and countries award 1,000 for success. Connections and memory award partial points. Wavelength subtracts 40 points from 1,000 for each scale point away from the target. A clue giver earns 1,000 once someone scores at least 600.",
     ruleEstimate:
       "Estimation: up to 1,000 points. Your relative distance from the answer counts: 10% off = 900 points, 50% = 500, 100% or more = 0. Rounded to whole points.",
     ruleFormula:
       "Points = max(0, round(1,000 × (1 − |estimate − answer| / max(|answer|, 1))))",
     ruleSecret:
-      "One locked answer per question. In the drawing game, you may keep guessing until correct. Answers stay hidden until the reveal. Everyone shares the same deadline.",
+      "The explanation before each round states how many attempts you have. Confirmed answers and attempts survive reload. Answers stay hidden until the reveal. Everyone shares the same deadline.",
     ruleIdentity:
       "Your device identity keeps your points across weeks. Player names can be shared. Clearing browser data or changing devices starts a new identity.",
     ruleLanguage:
@@ -343,6 +348,7 @@ export const categories: Record<
   Record<GameMode, { title: string; description: string; label: string }>
 > = {
   de: {
+    ...puzzleNames.de,
     mixed: {
       title: "Spiele-Mix",
       description: "Sechs Runden, jedes Mal ein anderes Spiel.",
@@ -396,6 +402,7 @@ export const categories: Record<
     },
   },
   en: {
+    ...puzzleNames.en,
     mixed: {
       title: "Game mix",
       description: "Six rounds, a different game every time.",
@@ -456,7 +463,7 @@ export const errors: Record<Language, Record<ErrorCode, string>> = {
     ASSOCIATION_CLUE_ONLY: "Nur Hinweisgeber können einen Hinweis abgeben.",
     ALREADY_CLUED: "Der Hinweis ist bereits festgelegt.",
     INVALID_CLUE:
-      "Gib je ein Wort auf Deutsch und Englisch ein. Kein Wort vom Brett.",
+      "Prüfe beide Hinweise. Wortassoziation braucht je ein Wort ohne Zielwörter. Wellenlänge erlaubt kurze Beschreibungen.",
     CLUE_TOO_LATE: "Die Hinweiszeit ist vorbei.",
     WAIT_FOR_CLUE: "Warte auf den Hinweis deines Teams.",
     ASSOCIATION_GUESSER_ONLY:
@@ -471,7 +478,7 @@ export const errors: Record<Language, Record<ErrorCode, string>> = {
       "Die Runde läuft schon. Neue Teilnehmer können bei der nächsten Runde mitspielen.",
     UNAUTHORIZED:
       "Deine Gerätekennung ist ungültig. Bitte kehre zur Startseite zurück und versuche es erneut.",
-    HOST_ONLY: "Nur der Host kann die Abstimmung starten.",
+    HOST_ONLY: "Nur der Host kann das Spiel starten.",
     NOT_ENOUGH_PLAYERS: "Zum Starten braucht ihr mindestens 2 Teilnehmer.",
     WRONG_GUESS: "Noch nicht richtig. Versuch es weiter!",
     ARTIST_ONLY: "Nur die zeichnende Person darf das Bild bearbeiten.",
@@ -479,7 +486,7 @@ export const errors: Record<Language, Record<ErrorCode, string>> = {
     WRONG_PHASE: "Diese Aktion ist in dieser Spielphase nicht möglich.",
     ALREADY_ANSWERED: "Deine Antwort ist bereits eingeloggt.",
     INVALID_ANSWER:
-      "Bitte wähle eine Antwort oder gib eine gültige Zahl ein (z. B. 12,5).",
+      "Prüfe deine Eingabe. Beachte die Regeln und die erlaubten Zeichen für dieses Spiel.",
     TOO_LATE: "Die Antwortzeit ist vorbei.",
     STORAGE_ERROR:
       "Das Speichern ist fehlgeschlagen. Bitte versuche es erneut. Bestätigte Antworten bleiben erhalten.",
@@ -494,7 +501,7 @@ export const errors: Record<Language, Record<ErrorCode, string>> = {
     ASSOCIATION_CLUE_ONLY: "Only clue givers can submit a clue.",
     ALREADY_CLUED: "The clue is already locked.",
     INVALID_CLUE:
-      "Enter one word in German and English. No word from the board.",
+      "Check both clues. Word association needs one word per language without target words. Wavelength accepts short descriptions.",
     CLUE_TOO_LATE: "The clue deadline has passed.",
     WAIT_FOR_CLUE: "Wait for your team’s clue.",
     ASSOCIATION_GUESSER_ONLY:
@@ -508,14 +515,15 @@ export const errors: Record<Language, Record<ErrorCode, string>> = {
       "The session has started. New players can join the next session.",
     UNAUTHORIZED:
       "Your device identity is invalid. Return to the home screen and try again.",
-    HOST_ONLY: "Only the host can start the vote.",
+    HOST_ONLY: "Only the host can start the game.",
     NOT_ENOUGH_PLAYERS: "You need at least 2 players to start.",
     WRONG_GUESS: "Not quite. Keep trying!",
     ARTIST_ONLY: "Only the artist can change the drawing.",
     GUESSER_ONLY: "You are drawing this question. The others guess.",
     WRONG_PHASE: "That action is unavailable in this phase.",
     ALREADY_ANSWERED: "Your answer is already locked in.",
-    INVALID_ANSWER: "Select an answer or enter a valid number (e.g. 12.5).",
+    INVALID_ANSWER:
+      "Check your entry against this game’s rules and allowed characters.",
     TOO_LATE: "The answer deadline has passed.",
     STORAGE_ERROR:
       "Saving failed. Please try again. Confirmed answers are safe.",

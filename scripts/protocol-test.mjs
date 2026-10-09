@@ -30,9 +30,10 @@ function compile(file) {
 const { packages } = await import(compile("worker/content/index.ts"));
 const modes = process.env.BRAINBREAK_CATEGORIES?.split(",") || [
   ...Object.keys(packages[0].questions).filter(
-    (c) => packages[0].questions[c].length >= 6,
+    (c) =>
+      packages[0].questions[c].length >= 6 &&
+      !packages[0].questions[c][0]?.puzzle,
   ),
-  "mixed",
 ];
 assert(
   modes.every(

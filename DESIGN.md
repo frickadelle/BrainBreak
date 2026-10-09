@@ -14,7 +14,7 @@ Keep the bundled DM Sans for body, controls and data. Retain Outfit sparingly fo
 
 ## Layout
 
-A compact top bar contains the brain brand, sound toggle and language selector. The homepage places the existing brain illustration beside a simple create/join form. Explain the game in one short line rather than a large marketing section. Game selection uses compact rows with a name, short description and vote count. Gameplay emphasizes the task, shared timer, role, answer controls and progress.
+A compact top bar contains the brain brand, sound toggle and language selector. The homepage places the existing brain illustration beside a simple create/join form. Explain the game in one short line rather than a large marketing section. The default starts a random mix directly. A tutorial names the next game, gives a short example and asks each participant to click Ready. Category voting remains only for older rooms. Gameplay emphasizes the task, shared timer, role, answer controls and progress.
 
 ## Components
 
